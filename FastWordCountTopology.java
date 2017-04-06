@@ -7,14 +7,14 @@ package performance.test;
  * This can show how fast the word count can run.
  */
 public class FastWordCountTopology {
-    private static Logger      LOG                             = LoggerFactory.getLogger(FastWordCountTopology.class);
+    private static Logger LOG                             = LoggerFactory.getLogger(FastWordCountTopology.class);
     public final static String TOPOLOGY_SPOUT_PARALLELISM_HINT = "topology.spout.parallel";
     public final static String TOPOLOGY_SPLIT_PARALLELISM_HINT = "topology.bolt.parallel";
     public final static String TOPOLOGY_COUNT_PARALLELISM_HINT = "topology.bolt.parallel";
 
     public static class FastRandomSentenceSpout implements IRichSpout {
         SpoutOutputCollector _collector;
-        Random               _rand;
+        Random _rand;
         long                 sendingCount;
         long                 startTime;
         boolean              isStatEnable;
@@ -24,15 +24,32 @@ public class FastWordCountTopology {
                 "and every where that marry went the lamb was sure to go",
                 "one two three four five six seven eight nine ten",
                 "this is a test of the emergency broadcast system this is only a test",
-                "peter piper picked a peck of pickeled peppers" };
+                "peter piper picked a peck of pickeled peppers",
+                "Storm is a distributed and fault-tolerant realtime computation system.",
+                "Inspired by Apache Storm, Storm has been completely rewritten in Java and provides many more enhanced features.",
+                "Storm has been widely used in many enterprise environments and proved robust and stable.",
+                "Storm provides a distributed programming framework very similar to Hadoop MapReduce.",
+                "The developer only needs to compose his/her own pipe-lined computation logic by implementing the JStorm API",
+                " which is fully compatible with Apache Storm API",
+                "and submit the composed Topology to a working Storm instance.",
+                "Similar to Hadoop MapReduce, Storm computes on a DAG (directed acyclic graph)." ,
+                "Different from Hadoop MapReduce, a Storm topology runs 24 * 7",
+                "the very nature of its continuity abd 100% in-memory architecture ",
+                "has been proved a particularly suitable solution for streaming data and real-time computation.",
+                "Storm guarantees fault-tolerance.",
+                "Whenever a worker process crashes, ",
+                "the scheduler embedded in the Storm instance immediately spawns a new worker process to take the place of the failed one.",
+                " The Acking framework provided by storm guarantees that every single piece of data will be processed at least once." };
 
         public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
             _collector = collector;
             _rand = new Random();
             sendingCount = 0;
             startTime = System.currentTimeMillis();
-            sendNumPerNexttuple = Utils.getInt(conf.get("send.num.each.time"), 1);
-            isStatEnable = Utils.getBoolean(conf.get("is.stat.enable"), true);
+            // sendNumPerNexttuple = Utils.getInt(conf.get("send.num.each.time"), 1);
+            sendNumPerNexttuple=1;
+            // isStatEnable = Utils.getBoolean(conf.get("is.stat.enable"), true);
+            isStatEnable=true;
         }
 
         public void nextTuple() {
@@ -66,9 +83,11 @@ public class FastWordCountTopology {
             sendingCount++;
             long now = System.currentTimeMillis(); //
             long interval = now - startTime;
-            if (interval > 60 * 1000) {
+
+            if (interval > 1000) {
+                //LOG.debug("interval = "+interval);
                 // 多少条tuple/s
-                LOG.info("Sending tps of last one minute is " + (sendingCount * sendNumPerNexttuple * 1000) / interval);
+                LOG.info("Sending tps of last one second is " + (sendingCount * sendNumPerNexttuple * 1000) / interval);
                 startTime = now;
                 sendingCount = 0;
             }
@@ -106,8 +125,11 @@ public class FastWordCountTopology {
         public void execute(Tuple tuple) {
             String sentence = tuple.getString(0);
             for (String word : sentence.split("\\s+")) {
-                collector.emit(new Values(word));
+                //collector.emit(new Values(word));
+                collector.emit(tuple,new Values(word));
+
             }
+            collector.ack(tuple);
         }
 
 
@@ -140,6 +162,7 @@ public class FastWordCountTopology {
 
         public void execute(Tuple tuple) {
             String word = tuple.getString(0);
+            collector.ack(tuple);
             Integer count = counts.get(word);
             if (count == null)
                 count = 0;
@@ -171,13 +194,16 @@ public class FastWordCountTopology {
     }
 
     static boolean isLocal = true;
-    static Config  conf    = null;
+    static Config conf    = null;
 
     public static void test() throws Exception{
 
-        int spout_Parallelism_hint = Utils.getInt(conf.get(TOPOLOGY_SPOUT_PARALLELISM_HINT), 1);
-        int split_Parallelism_hint = Utils.getInt(conf.get(TOPOLOGY_SPLIT_PARALLELISM_HINT), 1);
-        int count_Parallelism_hint = Utils.getInt(conf.get(TOPOLOGY_COUNT_PARALLELISM_HINT), 2);
+        //int spout_Parallelism_hint = Utils.getInt(conf.get(TOPOLOGY_SPOUT_PARALLELISM_HINT), 1);
+        int spout_Parallelism_hint=1;
+        //int split_Parallelism_hint = Utils.getInt(conf.get(TOPOLOGY_SPLIT_PARALLELISM_HINT), 1);
+        int split_Parallelism_hint=4;
+        // int count_Parallelism_hint = Utils.getInt(conf.get(TOPOLOGY_COUNT_PARALLELISM_HINT), 2);
+        int count_Parallelism_hint=4;
 
         TopologyBuilder builder = new TopologyBuilder();
 
@@ -186,22 +212,25 @@ public class FastWordCountTopology {
         builder.setBolt("split", new SplitSentence(), split_Parallelism_hint).shuffleGrouping("spout");
         builder.setBolt("count", new WordCount(), count_Parallelism_hint).fieldsGrouping("split", new Fields("word"));
 
+
         String[] className = Thread.currentThread().getStackTrace()[1].getClassName().split("\\.");
         String topologyName = className[className.length - 1];
 
         LocalCluster cluster = new LocalCluster();
+        conf = new Config();
+        //conf.setNumAckers(0);
         cluster.submitTopology(topologyName, conf, builder.createTopology());
         //Utils.waitForSeconds(5);
-       // Thread.sleep(5 * 1000);
-       // cluster.killTopology(topologyName);
-       // cluster.shutdown();
+//         Thread.sleep(60 * 1000);
+//         cluster.killTopology(topologyName);
+//         cluster.shutdown();
 
         //StormSubmitter.submitTopology(topologyName, conf, builder.createTopology());
     }
 
     public static void main(String[] args) throws Exception {
 
-        conf = utils.Utils.getConfig(args);
+        // conf = utils.Utils.getConfig(args);
         test();
     }
 }
